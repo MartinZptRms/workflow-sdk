@@ -1,0 +1,53 @@
+{
+    "name": "workflow/sdk",
+    "description": "Official PHP SDK for the Workflow project management platform.",
+    "keywords": [
+        "workflow",
+        "sdk",
+        "tickets",
+        "project-management",
+        "laravel"
+    ],
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.2",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0",
+        "orchestra/testbench": "^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Workflow\\SDK\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Workflow\\SDK\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Workflow\\SDK\\Laravel\\WorkflowServiceProvider"
+            ],
+            "aliases": {
+                "Workflow": "Workflow\\SDK\\Laravel\\Facades\\Workflow"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "authors": [
+        {
+            "name": "Martín Isaí Zapata Ramos",
+            "email": "martin.isai@zapataramos.com",
+            "role": "Developer"
+        }
+    ]
+}
