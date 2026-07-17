@@ -1,5 +1,5 @@
 {
-    "name": "workflow/sdk",
+    "name": "workflow-pm/workflow-sdk",
     "description": "Official PHP SDK for the Workflow project management platform.",
     "keywords": [
         "workflow",
