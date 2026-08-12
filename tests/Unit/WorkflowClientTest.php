@@ -92,4 +92,47 @@ class WorkflowClientTest extends TestCase
 
         $this->assertNull($client->report(new \RuntimeException('Test')));
     }
+
+    public function test_report_uses_explicit_fingerprint_override(): void
+    {
+        [$client, $transport] = $this->makeClient([
+            [201, Fixtures::ticketCreatedResponse()],
+        ]);
+
+        $client->report(new \RuntimeException('Boom'), ['fingerprint' => 'checkout-flow']);
+
+        $body = json_decode($transport->lastRequest()['body'], true);
+        $this->assertSame(sha1('checkout-flow'), $body['fingerprint']);
+    }
+
+    /**
+     * The same bug thrown from two different release directories must produce
+     * the same fingerprint — otherwise every atomic deploy spawns a duplicate
+     * ticket instead of folding occurrences together.
+     */
+    public function test_fingerprint_is_stable_across_release_paths(): void
+    {
+        $normalize = function (WorkflowClient $client, string $path): string {
+            $ref = new \ReflectionMethod($client, 'normalizePath');
+            $ref->setAccessible(true);
+            return $ref->invoke($client, $path);
+        };
+
+        // With a known project root (Laravel passes base_path(), which is itself
+        // the current release dir), the thrown file strips to a relative path.
+        $clientA = new WorkflowClient('k', 'https://x', projectRoot: '/var/www/app/releases/20260810120000');
+        $clientB = new WorkflowClient('k', 'https://x', projectRoot: '/var/www/app/releases/20260811093000');
+
+        $this->assertSame(
+            $normalize($clientA, '/var/www/app/releases/20260810120000/app/Services/Checkout.php'),
+            $normalize($clientB, '/var/www/app/releases/20260811093000/app/Services/Checkout.php'),
+        );
+
+        // Without a project root, the release-id segment is collapsed instead.
+        $client = new WorkflowClient('k', 'https://x');
+        $this->assertSame(
+            $normalize($client, '/srv/releases/abc123/app/Foo.php'),
+            $normalize($client, '/srv/releases/def456/app/Foo.php'),
+        );
+    }
 }

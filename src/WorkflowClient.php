@@ -49,6 +49,14 @@ class WorkflowClient
 
     private readonly HttpClient $http;
 
+    /**
+     * Absolute path of the host application's root, used to make error
+     * fingerprints stable across deploys (see fingerprint()). The Laravel
+     * provider passes base_path(); plain-PHP callers may pass their project
+     * root, or leave it null to rely on the release-path heuristic.
+     */
+    private readonly ?string $projectRoot;
+
     public function __construct(
         string     $apiKey,
         string     $baseUrl,
@@ -56,7 +64,9 @@ class WorkflowClient
         int        $retries     = 2,
         ?Transport $transport   = null,
         int        $timeout     = 10,
+        ?string    $projectRoot = null,
     ) {
+        $this->projectRoot = $projectRoot;
         $this->http     = new HttpClient($apiKey, $baseUrl, $retries, $transport, $timeout);
         $this->tickets  = new TicketResource($this->http);
         $this->helpdesk = new HelpdeskResource($this->http, $helpdeskUrl ?: $baseUrl . '/helpdesk');
@@ -97,7 +107,20 @@ class WorkflowClient
             ),
             'description' => $this->formatException($exception, $context),
             'priority'    => 'critical',
+            // Stable hash so the platform can fold repeated occurrences of the
+            // same error into a single ticket instead of creating duplicates.
+            'fingerprint' => $this->fingerprint($exception, $context),
         ];
+
+        // Which end-client was being served when the error happened — lets the
+        // platform count distinct clients impacted. Resolved by the host app
+        // (see workflow.client_resolver) and passed through the context.
+        if (isset($context['client_external_id'])
+            && $context['client_external_id'] !== null
+            && $context['client_external_id'] !== ''
+        ) {
+            $data['client_external_id'] = (string) $context['client_external_id'];
+        }
 
         if ($workflowId !== null) {
             $data['workflow_id'] = $workflowId;
@@ -107,6 +130,60 @@ class WorkflowClient
     }
 
     // ── Private ───────────────────────────────────────────────
+
+    /**
+     * Computes a stable fingerprint that groups "the same" error.
+     *
+     * Uses the exception class plus the file and line where it was thrown —
+     * NOT the message, which often carries variable data (ids, values) that
+     * would defeat grouping. Two occurrences with the same origin collapse
+     * into one ticket on the platform.
+     *
+     * The host app may override grouping entirely by passing an explicit
+     * `fingerprint` in the context.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function fingerprint(\Throwable $e, array $context = []): string
+    {
+        // Explicit override — let the host control how errors are grouped.
+        if (isset($context['fingerprint'])
+            && is_string($context['fingerprint'])
+            && $context['fingerprint'] !== ''
+        ) {
+            return sha1($context['fingerprint']);
+        }
+
+        return sha1(get_class($e) . '|' . $this->normalizePath($e->getFile()) . '|' . $e->getLine());
+    }
+
+    /**
+     * Makes a file path stable across deploys and servers so the fingerprint
+     * doesn't change every release.
+     *
+     * Atomic-deploy tools (Forge, Envoyer, Deployer, Capistrano) and container
+     * rebuilds place the app under a release directory whose name changes on
+     * every deploy (e.g. `…/releases/20260810123456/app/Foo.php`). Using the
+     * raw absolute path there yields a different sha1 after each deploy, so the
+     * same bug never folds and duplicate tickets pile up. We strip the known
+     * project root and collapse any release-id segment to a relative path.
+     */
+    private function normalizePath(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+
+        // 1) Strip the configured project root (Laravel passes base_path()).
+        if ($this->projectRoot !== null && $this->projectRoot !== '') {
+            $root = rtrim(str_replace('\\', '/', $this->projectRoot), '/') . '/';
+            if (str_starts_with($path, $root)) {
+                return substr($path, strlen($root));
+            }
+        }
+
+        // 2) Fallback: collapse a timestamped/hashed release segment so
+        //    atomic-deploy paths stop fragmenting the fingerprint.
+        return preg_replace('#/releases/[^/]+/#', '/releases/', $path) ?? $path;
+    }
 
     private const MAX_DESCRIPTION = 9_900;
 

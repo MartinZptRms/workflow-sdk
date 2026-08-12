@@ -61,6 +61,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Client Resolver
+    |--------------------------------------------------------------------------
+    | Optional. A callable that returns the external id of the client/customer
+    | currently being served — the same value your system stores as a client's
+    | external_id in Workflow. When set, auto-reported errors record which
+    | distinct clients each grouped error impacts (blast radius).
+    |
+    | The callable is invoked at report time and must never throw; any error
+    | is swallowed and the report is sent without a client id.
+    |
+    | Example:
+    |   'client_resolver' => fn () => auth()->user()?->account_id,
+    |
+    | Leave null to disable client impact tracking.
+    */
+    'client_resolver' => null,
+
+    /*
+    |--------------------------------------------------------------------------
     | HTTP Options
     |--------------------------------------------------------------------------
     */

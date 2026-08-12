@@ -28,6 +28,9 @@ class WorkflowServiceProvider extends ServiceProvider
                 helpdeskUrl: $config['helpdesk_url'] ?? '',
                 retries:     (int) ($config['retries'] ?? 2),
                 timeout:     (int) ($config['timeout'] ?? 10),
+                // Lets error fingerprints stay stable across atomic deploys /
+                // container rebuilds by normalizing thrown-file paths.
+                projectRoot: $app->basePath(),
             );
         });
 
@@ -105,6 +108,20 @@ class WorkflowServiceProvider extends ServiceProvider
                 $context['user_id'] = $this->app->make('auth')->id();
             } catch (\Throwable) {
                 // Auth guard may not be available in all contexts.
+            }
+        }
+
+        // Resolve the current client/customer so grouped errors can report
+        // how many distinct clients they impact. Must never break reporting.
+        $resolver = config('workflow.client_resolver');
+        if (is_callable($resolver)) {
+            try {
+                $clientId = $resolver();
+                if ($clientId !== null && $clientId !== '') {
+                    $context['client_external_id'] = (string) $clientId;
+                }
+            } catch (\Throwable) {
+                // Resolver failed — send the report without a client id.
             }
         }
 
